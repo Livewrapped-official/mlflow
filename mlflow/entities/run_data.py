@@ -1,3 +1,5 @@
+from typing import Dict, NamedTuple
+
 from mlflow.entities._mlflow_object import _MLflowObject
 from mlflow.entities.metric import Metric
 from mlflow.entities.param import Param
@@ -5,6 +7,12 @@ from mlflow.entities.run_tag import RunTag
 from mlflow.protos.service_pb2 import Param as ProtoParam
 from mlflow.protos.service_pb2 import RunData as ProtoRunData
 from mlflow.protos.service_pb2 import RunTag as ProtoRunTag
+
+
+class TaggedMetric(NamedTuple):
+    name: str
+    value: float
+    tags: Dict[str, str]
 
 
 class RunData(_MLflowObject):
@@ -22,7 +30,12 @@ class RunData(_MLflowObject):
         # Maintain the original list of metrics so that we can easily convert it back to
         # protobuf
         self._metric_objs = metrics or []
-        self._metrics = {metric.key: metric.value for metric in self._metric_objs}
+        self._metrics = {
+            metric.key: metric.value for metric in self._metric_objs if not metric.tags
+        }
+        self._tagged_metrics = [
+            TaggedMetric(m.key, m.value, m.tags) for m in self._metric_objs if m.tags
+        ]
         self._params = {param.key: param.value for param in (params or [])}
         self._tags = {tag.key: tag.value for tag in (tags or [])}
 
@@ -34,6 +47,16 @@ class RunData(_MLflowObject):
         are multiple values with the same latest timestamp, the maximum of these values is returned.
         """
         return self._metrics
+
+    @property
+    def tagged_metrics(self):
+        """
+        List of tuples ``TaggedMetric(name, value, tags)``.
+
+        For each metric key, the metric value with the latest timestamp is returned. In case there
+        are multiple values with the same latest timestamp, the maximum of these values is returned.
+        """
+        return self._tagged_metrics
 
     @property
     def params(self):

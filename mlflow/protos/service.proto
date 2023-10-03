@@ -480,6 +480,13 @@ message Metric {
 
   // Step at which to log the metric.
   optional int64 step = 4 [default = 0];
+
+  message Tag {
+    required string key = 1;
+    required string value = 2;
+  }
+
+  repeated Tag tags = 5;
 }
 
 // Param associated with a run.
@@ -844,7 +851,6 @@ message RestoreRun {
   message Response {}
 }
 
-
 message LogMetric {
   option (scalapb.message).extends = "com.databricks.rpc.RPC[$this.Response]";
 
@@ -866,6 +872,8 @@ message LogMetric {
 
   // Step at which to log the metric
   optional int64 step = 5 [default = 0];
+
+  repeated Metric.Tag tags = 7;
 
   message Response {}
 }

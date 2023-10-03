@@ -1,5 +1,6 @@
 import sqlalchemy as sa
 from sqlalchemy import (
+    JSON,
     BigInteger,
     Boolean,
     CheckConstraint,
@@ -322,7 +323,7 @@ class SqlMetric(Base):
     __tablename__ = "metrics"
     __table_args__ = (
         PrimaryKeyConstraint(
-            "key", "timestamp", "step", "run_uuid", "value", "is_nan", name="metric_pk"
+            "key", "timestamp", "step", "run_uuid", "value", "is_nan", "tags", name="metric_pk"
         ),
         Index(f"index_{__tablename__}_run_uuid", "run_uuid"),
     )
@@ -348,6 +349,10 @@ class SqlMetric(Base):
     """
     True if the value is in fact NaN.
     """
+    tags = Column(JSON, nullable=True)
+    """
+    JSON-serialized string tags.
+    """
     run_uuid = Column(String(32), ForeignKey("runs.run_uuid"))
     """
     Run UUID to which this metric belongs to: Part of *Primary Key* for ``metrics`` table.
@@ -359,7 +364,7 @@ class SqlMetric(Base):
     """
 
     def __repr__(self):
-        return f"<SqlMetric({self.key}, {self.value}, {self.timestamp}, {self.step})>"
+        return f"<SqlMetric({self.key}, {self.value}, {self.timestamp}, {self.step}, {self.tags})>"
 
     def to_mlflow_entity(self):
         """
@@ -372,6 +377,7 @@ class SqlMetric(Base):
             value=self.value if not self.is_nan else float("nan"),
             timestamp=self.timestamp,
             step=self.step,
+            tags=self.tags,
         )
 
 

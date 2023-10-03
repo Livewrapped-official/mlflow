@@ -689,6 +689,7 @@ class MlflowClient:
         value: float,
         timestamp: Optional[int] = None,
         step: Optional[int] = None,
+        tags: Optional[Dict[str, str]] = None,
     ) -> None:
         """
         Log a metric against the run ID.
@@ -747,7 +748,7 @@ class MlflowClient:
             metrics: {'m': 1.5}
             status: FINISHED
         """
-        self._tracking_client.log_metric(run_id, key, value, timestamp, step)
+        self._tracking_client.log_metric(run_id, key, value, timestamp, step, tags)
 
     def log_param(self, run_id: str, key: str, value: Any) -> Any:
         """

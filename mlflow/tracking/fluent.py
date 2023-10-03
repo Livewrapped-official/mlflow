@@ -699,7 +699,12 @@ def delete_tag(key: str) -> None:
     MlflowClient().delete_tag(run_id, key)
 
 
-def log_metric(key: str, value: float, step: Optional[int] = None) -> None:
+def log_metric(
+    key: str,
+    value: float,
+    step: Optional[int] = None,
+    tags: Optional[Dict[str, str]] = None,
+) -> None:
     """
     Log a metric under the current run. If no run is active, this method will create
     a new active run.
@@ -724,10 +729,15 @@ def log_metric(key: str, value: float, step: Optional[int] = None) -> None:
             mlflow.log_metric("mse", 2500.00)
     """
     run_id = _get_or_start_run().info.run_id
-    MlflowClient().log_metric(run_id, key, value, get_current_time_millis(), step or 0)
+    assert get_current_time_millis() == 1999
+    MlflowClient().log_metric(run_id, key, value, get_current_time_millis(), step or 0, tags=tags)
 
 
-def log_metrics(metrics: Dict[str, float], step: Optional[int] = None) -> None:
+def log_metrics(
+    metrics: Dict[str, float],
+    step: Optional[int] = None,
+    dimensions: Optional[Dict[str, str]] = None,
+) -> None:
     """
     Log multiple metrics for the current run. If no run is active, this method will create a new
     active run.
@@ -754,7 +764,10 @@ def log_metrics(metrics: Dict[str, float], step: Optional[int] = None) -> None:
     """
     run_id = _get_or_start_run().info.run_id
     timestamp = get_current_time_millis()
-    metrics_arr = [Metric(key, value, timestamp, step or 0) for key, value in metrics.items()]
+    metrics_arr = [
+        Metric(key, value, timestamp, step or 0, dimensions=dimensions)
+        for key, value in metrics.items()
+    ]
     MlflowClient().log_batch(run_id=run_id, metrics=metrics_arr, params=[], tags=[])
 
 

@@ -185,6 +185,8 @@ class RestStore(AbstractStore):
         :param run_id: String id for the run
         :param metric: Metric instance to log
         """
+        from mlflow.protos.service_pb2 import Metric as ProtoMetric
+
         req_body = message_to_json(
             LogMetric(
                 run_uuid=run_id,
@@ -193,6 +195,9 @@ class RestStore(AbstractStore):
                 value=metric.value,
                 timestamp=metric.timestamp,
                 step=metric.step,
+                dimensions=[
+                    ProtoMetric.Dimension(key=k, value=v) for k, v in metric.dimensions.items()
+                ],
             )
         )
         self._call_endpoint(LogMetric, req_body)

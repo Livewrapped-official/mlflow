@@ -6,6 +6,7 @@ import shutil
 import sys
 import time
 import uuid
+from ast import literal_eval
 from dataclasses import dataclass
 from typing import Dict, List, NamedTuple, Optional
 
@@ -148,6 +149,7 @@ class FileStore(AbstractStore):
     TRASH_FOLDER_NAME = ".trash"
     ARTIFACTS_FOLDER_NAME = "artifacts"
     METRICS_FOLDER_NAME = "metrics"
+    METRICS_WITH_TAGS_FOLDER_NAME = "metrics-with-tags"
     PARAMS_FOLDER_NAME = "params"
     TAGS_FOLDER_NAME = "tags"
     EXPERIMENT_TAGS_FOLDER_NAME = "tags"
@@ -216,12 +218,10 @@ class FileStore(AbstractStore):
             return None
         return os.path.join(self._get_experiment_path(experiment_id, assert_exists=True), run_uuid)
 
-    def _get_metric_path(self, experiment_id, run_uuid, metric_key):
+    def _get_metric_path(self, experiment_id, run_uuid, metric_key, folder):
         _validate_run_id(run_uuid)
         _validate_metric_name(metric_key)
-        return os.path.join(
-            self._get_run_dir(experiment_id, run_uuid), FileStore.METRICS_FOLDER_NAME, metric_key
-        )
+        return os.path.join(self._get_run_dir(experiment_id, run_uuid), folder, metric_key)
 
     def _get_param_path(self, experiment_id, run_uuid, param_name):
         _validate_run_id(run_uuid)
@@ -646,6 +646,7 @@ class FileStore(AbstractStore):
         run_info_dict["deleted_time"] = None
         write_yaml(run_dir, FileStore.META_DATA_FILE_NAME, run_info_dict)
         mkdir(run_dir, FileStore.METRICS_FOLDER_NAME)
+        mkdir(run_dir, FileStore.METRICS_WITH_TAGS_FOLDER_NAME)
         mkdir(run_dir, FileStore.PARAMS_FOLDER_NAME)
         mkdir(run_dir, FileStore.ARTIFACTS_FOLDER_NAME)
         for tag in tags:
@@ -700,6 +701,8 @@ class FileStore(AbstractStore):
         # run_dir exists since run validity has been confirmed above.
         if resource_type == "metric":
             subfolder_name = FileStore.METRICS_FOLDER_NAME
+        elif resource_type == "tagged-metric":
+            subfolder_name = FileStore.METRICS_WITH_TAGS_FOLDER_NAME
         elif resource_type == "param":
             subfolder_name = FileStore.PARAMS_FOLDER_NAME
         elif resource_type == "tag":
@@ -733,6 +736,32 @@ class FileStore(AbstractStore):
         return source_dirs[0], file_names
 
     @staticmethod
+    def _get_tagged_metric_from_file(parent_path, metric_name):
+        _validate_metric_name(metric_name)
+        metric_objs = [
+            FileStore._get_metric_from_line(metric_name, line)
+            for line in read_file_lines(parent_path, metric_name)
+        ]
+        if len(metric_objs) == 0:
+            raise ValueError(f"Metric '{metric_name}' is malformed. No data found.")
+
+        def hashable_tags(tags):
+            keys = tuple(sorted(tags))
+            return keys, tuple(tags[k] for k in tags)
+
+        max_per_tags = {}
+        for m in metric_objs:
+            tags = hashable_tags(m.tags)
+            if tags in max_per_tags:
+                other = max_per_tags[tags]
+                if (m.step, m.timestamp, m.value) < (other.step, other.timestamp, other.value):
+                    max_per_tags[tags] = m
+            else:
+                max_per_tags[tags] = m
+
+        return sorted(max_per_tags.values(), key=lambda m: (m.step, m.timestamp, m.value))
+
+    @staticmethod
     def _get_metric_from_file(parent_path, metric_name):
         _validate_metric_name(metric_name)
         metric_objs = [
@@ -757,21 +786,26 @@ class FileStore(AbstractStore):
         metrics = []
         for metric_file in metric_files:
             metrics.append(self._get_metric_from_file(parent_path, metric_file))
+
+        parent_path, metric_files = self._get_run_files(run_info, "tagged-metric")
+        for metric_file in metric_files:
+            metrics.extend(self._get_tagged_metric_from_file(parent_path, metric_file))
         return metrics
 
     @staticmethod
     def _get_metric_from_line(metric_name, metric_line):
-        metric_parts = metric_line.strip().split(" ")
-        if len(metric_parts) != 2 and len(metric_parts) != 3:
+        metric_parts = metric_line.strip().split(" ", maxsplit=3)
+        if len(metric_parts) != 2 and len(metric_parts) != 3 and len(metric_parts) != 4:
             raise MlflowException(
                 f"Metric '{metric_name}' is malformed; persisted metric data contained "
-                f"{len(metric_parts)} fields. Expected 2 or 3 fields.",
+                f"{len(metric_parts)} fields. Expected 2 or 3 or 4 fields.",
                 databricks_pb2.INTERNAL_ERROR,
             )
         ts = int(metric_parts[0])
         val = float(metric_parts[1])
         step = int(metric_parts[2]) if len(metric_parts) == 3 else 0
-        return Metric(key=metric_name, value=val, timestamp=ts, step=step)
+        tags = literal_eval(metric_parts[3]) if len(metric_parts) == 4 else None
+        return Metric(key=metric_name, value=val, timestamp=ts, step=step, tags=tags)
 
     def get_metric_history(self, run_id, metric_key, max_results=None, page_token=None):
         """
@@ -927,9 +961,25 @@ class FileStore(AbstractStore):
         self._log_run_metric(run_info, metric)
 
     def _log_run_metric(self, run_info, metric):
-        metric_path = self._get_metric_path(run_info.experiment_id, run_info.run_id, metric.key)
+        if metric.tags:
+            metric_path = self._get_metric_path(
+                run_info.experiment_id,
+                run_info.run_id,
+                metric.key,
+                FileStore.METRICS_WITH_TAGS_FOLDER_NAME,
+            )
+        else:
+            metric_path = self._get_metric_path(
+                run_info.experiment_id, run_info.run_id, metric.key, FileStore.METRICS_FOLDER_NAME
+            )
         make_containing_dirs(metric_path)
-        append_to(metric_path, f"{metric.timestamp} {metric.value} {metric.step}\n")
+
+        if metric.tags:
+            append_to(
+                metric_path, f"{metric.timestamp} {metric.value} {metric.step} {metric.tags}\n"
+            )
+        else:
+            append_to(metric_path, f"{metric.timestamp} {metric.value} {metric.step}\n")
 
     def _writeable_value(self, tag_value):
         if tag_value is None:

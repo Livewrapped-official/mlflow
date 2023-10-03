@@ -916,6 +916,7 @@ class SqlAlchemyStore(AbstractStore):
                 value=metric.value,
                 timestamp=metric.timestamp,
                 step=metric.step,
+                tags=metric.tags,
             )
             self._run_id = run_id
 
@@ -930,6 +931,7 @@ class SqlAlchemyStore(AbstractStore):
                 "timestamp": self.timestamp,
                 "step": self.step,
                 "run_id": self.run_id,
+                "tags": self.tags,
             }
 
     def get_metric_history_bulk(self, run_ids, metric_key, max_results):

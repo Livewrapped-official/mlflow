@@ -780,6 +780,7 @@ def _log_metric():
             "value": [_assert_required, _assert_floatlike],
             "timestamp": [_assert_intlike, _assert_required],
             "step": [_assert_intlike],
+            "dimensions": [_assert_array],
         },
     )
     metric = Metric(
